@@ -1,5 +1,3 @@
----
-
 # Isaac Gym on RTX 5090（Blackwell / sm_120）使用指南
 
 ## 1. 背景与问题定位
