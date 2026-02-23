@@ -34,57 +34,102 @@ python -m pip install -r requirements.txt
 
 ## 4. 安装 PyTorch
 
-### 路线 A：直接安装仓库提供的 sm_120 PyTorch wheel
+下面是**仅保留“方案 B：源码编译 PyTorch（面向 RTX 5090 / sm_120）”**的 `README.md` 版本，并严格按你给出的三步组织（在不改变要点的前提下，对个别细节做了更可执行的表述，如“按关键代码块定位而非固定行号”）。
 
-1. 安装仓库内提供的 `.whl`（示例路径请按你的仓库实际位置修改）：
-
-```bash
-python -m pip install ./wheels/torch-2.3.0a0+git63d5e92-cp38-cp38-linux_x86_64.whl
-# 如果你也提供了 torchvision/torchaudio 的匹配 whl，则同样安装对应文件
-```
-
-2. 验证：
-
-```bash
-python - <<'PY'
-import torch
-print("torch:", torch.__version__)
-print("cuda available:", torch.cuda.is_available())
-print("device:", torch.cuda.get_device_name(0))
-print("capability:", torch.cuda.get_device_capability(0))  # 期望 (12, 0)
-PY
-```
-
-只要 `capability` 输出为 `(12, 0)` 且 `cuda available: True`，说明你当前 PyTorch 已可在 5090 上正确运行。
 ---
 
-### 路线 B：从 PyTorch 官方仓库源码编译（最可控）
-
-> 适用于：你需要完全可复现的构建、或仓库未提供可用 wheel、或你需要特定 commit / patch。
-
-1. 获取 PyTorch 源码：
+### 4.1 克隆 PyTorch 源码到本地
 
 ```bash
-git clone --recursive https://github.com/pytorch/pytorch.git
+git clone https://github.com/pytorch/pytorch    # 1) 克隆主仓库
 cd pytorch
+git checkout v2.3.1                             # 2) 切换到 v2.3.1
+git submodule update --init --recursive         # 3) 初始化子模块
 ```
 
-2. 关键：指定 `sm_120` 架构（否则编出来的 PyTorch 仍可能不含 5090 支持）：
+---
+
+
+### 4.2 修改源码并编译
+
+#### 4.2.1 修改 `select_compute_arch.cmake`
+
+打开：
+
+`pytorch/cmake/Modules_CUDA_fix/upstream/FindCUDA/select_compute_arch.cmake`
+
+定位到类似逻辑：
+
+```cmake
+elseif(${arch_name} STREQUAL "Hopper")
+  set(arch_bin 9.0)
+  set(arch_ptx 9.0)
+else()
+  message(SEND_ERROR "Unknown CUDA Architecture Name ${arch_name} in CUDA_SELECT_NVCC_ARCH_FLAGS")
+endif()
+```
+
+将 `else()` 分支改为对 `12.0` ：
+
+```cmake
+elseif(${arch_name} STREQUAL "Hopper")
+  set(arch_bin 9.0)
+  set(arch_ptx 9.0)
+else()
+  set(arch_bin 12.0)
+  set(arch_ptx 12.0)
+endif()
+```
+
+---
+
+#### 4.2.2 修改 `pytorch/Dockerfile`
+
+打开：
+
+`pytorch/Dockerfile`
+
+找到包含 `TORCH_CUDA_ARCH_LIST=...` 的内容：
 
 ```bash
-export TORCH_CUDA_ARCH_LIST="sm_120"
+TORCH_CUDA_ARCH_LIST="3.5 5.2 6.0 6.1 7.0+PTX 8.0" TORCH_NVCC_FLAGS="-Xfatbin -compress-all" \
 ```
 
-PyTorch 社区明确给出：通过源码编译并设置 `TORCH_CUDA_ARCH_LIST` 可启用 `sm_120` 支持。([PyTorch Forums][2])
-
-3. 编译并安装（在当前 conda 环境）：
+在末尾追加 `12.0`：
 
 ```bash
-python -m pip install -r requirements.txt
-python setup.py develop
+TORCH_CUDA_ARCH_LIST="3.5 5.2 6.0 6.1 7.0+PTX 8.0 12.0" TORCH_NVCC_FLAGS="-Xfatbin -compress-all" \
 ```
 
-4. 验证：
+> 说明：即使你不在 Docker 内编译，这一步按你的要求保留；实际本机编译仍以第 3.3 节的环境变量为准。
+
+---
+
+### 4.3 开始编译
+
+```bash
+conda activate isaacgym
+cd pytorch
+
+export USE_CUDA=1
+export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0;12.0"
+export MAX_JOBS=5
+
+python setup.py bdist_wheel
+```
+
+---
+
+### 4.4 编译产物安装与验证
+
+编译成功后，wheel 通常在 `dist/` 下：
+
+```bash
+ls -lh dist/*.whl
+python -m pip install --force-reinstall dist/torch-*.whl
+```
+
+验证 CUDA 可用与设备能力：
 
 ```bash
 python - <<'PY'
@@ -96,7 +141,6 @@ print("capability:", torch.cuda.get_device_capability(0))
 PY
 ```
 
----
 
 ## 5. 安装与验证 Isaac Gym
 
