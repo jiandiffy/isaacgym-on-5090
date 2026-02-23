@@ -1,5 +1,3 @@
-下面是一份可直接放到仓库根目录的 `README.md`（面向 **RTX 5090 / Blackwell（sm_120）** 使用 Isaac Gym）。核心点：**5090 的计算能力是 12.0（sm_120）**，而不少 PyTorch 官方稳定版 wheel 未包含该架构，导致 “CUDA capability sm_120 not compatible / no kernel image” 等问题；解决办法是使用**带 sm_120 的 PyTorch**（仓库提供的 `.whl` 或自行从源码编译）。([NVIDIA Developer][1])
-
 ---
 
 # Isaac Gym on RTX 5090（Blackwell / sm_120）使用指南
